@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<typeSystemDescription xmlns="http://uima.apache.org/resourceSpecifier">
+  <name>test typesystem</name>
+  <version>0.1</version>
+  <vendor/>
+  <types>
+    <typeDescription>
+      <name>ch.epfl.bbp.typesystem.Sentence</name>
+      <description/>
+      <supertypeName>uima.tcas.Annotation</supertypeName>
+    </typeDescription>
+    <typeDescription>
+      <name>ch.epfl.bbp.typesystem.Protein</name>
+      <description/>
+      <supertypeName>uima.tcas.Annotation</supertypeName>
+    </typeDescription>
+  </types>
+</typeSystemDescription>
