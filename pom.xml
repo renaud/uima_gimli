@@ -3,7 +3,7 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>ch.epfl.bbp</groupId>
-  <version>1.0.1</version>
+  <version>1.0.2</version>
   <artifactId>uima_gimli</artifactId>
   <name>Gimli UIMA Annotator</name>
   <url>bioinformatics.ua.pt/support/gimli/doc/index.html</url>
@@ -34,14 +34,14 @@
 
   <dependencies>
     <dependency>
-      <groupId>org.uimafit</groupId>
-      <artifactId>uimafit</artifactId>
-      <version>1.3.0</version>
-    </dependency>
-    <dependency>
       <groupId>pt.ua.tm</groupId>
       <artifactId>gimli</artifactId>
-      <version>1.0.1</version>
+      <version>1.0.2</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.uima</groupId>
+      <artifactId>uimafit-core</artifactId>
+      <version>2.0.0</version>
     </dependency>
   </dependencies>
 

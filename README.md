@@ -13,6 +13,4 @@ See http://uima.apache.org/
 You need to unzip resources/tools/gdep.zip first.
 
 TODOes:
-- more robust matching of Gimli annotations to UIMA annotations
-- update to Gimli 1.0.2
-- update to latest uimafit
+- even more robust matching of Gimli annotations to UIMA annotations

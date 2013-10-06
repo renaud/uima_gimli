@@ -2,7 +2,7 @@ package ch.epfl.bbp.uima.gimli;
 
 import org.apache.uima.analysis_engine.AnalysisEngineProcessException;
 import org.apache.uima.jcas.JCas;
-import org.uimafit.component.JCasAnnotator_ImplBase;
+import org.apache.uima.fit.component.JCasAnnotator_ImplBase;
 
 import ch.epfl.bbp.typesystem.Sentence;
 

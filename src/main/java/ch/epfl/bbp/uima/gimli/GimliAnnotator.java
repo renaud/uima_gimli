@@ -1,5 +1,7 @@
 package ch.epfl.bbp.uima.gimli;
 
+import static java.lang.Integer.MAX_VALUE;
+
 import java.io.File;
 import java.lang.reflect.Constructor;
 import java.util.ArrayList;
@@ -7,13 +9,13 @@ import java.util.List;
 
 import org.apache.uima.UimaContext;
 import org.apache.uima.analysis_engine.AnalysisEngineProcessException;
+import org.apache.uima.fit.component.JCasAnnotator_ImplBase;
+import org.apache.uima.fit.descriptor.ConfigurationParameter;
+import org.apache.uima.fit.util.JCasUtil;
 import org.apache.uima.jcas.JCas;
 import org.apache.uima.resource.ResourceInitializationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.uimafit.component.JCasAnnotator_ImplBase;
-import org.uimafit.descriptor.ConfigurationParameter;
-import org.uimafit.util.JCasUtil;
 
 import pt.ua.tm.gimli.annotator.Annotator;
 import pt.ua.tm.gimli.config.Constants.EntityType;
@@ -64,6 +66,12 @@ public class GimliAnnotator extends JCasAnnotator_ImplBase {
     @ConfigurationParameter(name = PARAM_MODEL, description = "path to models, see "
             + "https://github.com/davidcampos/gimli/tree/master/resources/models/gimli", mandatory = true)
     private String modelPath;
+
+    public static final String PARAM_GDEP_FILES = "gDepFilesPath";
+    @ConfigurationParameter(name = PARAM_GDEP_FILES, description = "path to "
+            + "gdep files, located in resources/tools. must be unzipped first",//
+    mandatory = false, defaultValue = "resources/tools/gdep/")
+    private String gDepFilesPath;
 
     public static final String PARAM_FEATURES = "features";
     @ConfigurationParameter(name = PARAM_FEATURES, description = "path to features file", mandatory = true)
@@ -160,9 +168,22 @@ public class GimliAnnotator extends JCasAnnotator_ImplBase {
             ModelConfig mc = new ModelConfig(featuresPath);
             // Get CRF model
             crfModel = new CRFModel(mc, parsing, modelPath);
+
             // GDepParser
-            parser = new GDepParser(true);
+            if (!new File(gDepFilesPath).exists()
+                    || !new File(gDepFilesPath).isDirectory())
+                throw new ResourceInitializationException(new Exception(
+                        "No directory for  GDep files at " + gDepFilesPath));
+            try {
+
+            } catch (Exception e) {
+                throw new ResourceInitializationException(new Exception(
+                        "Could not launch parser, check that the gdep script is executable at "
+                                + gDepFilesPath));
+            }
+            parser = new MyGDepParser(true, gDepFilesPath);
             parser.launch();
+
             LOG.debug("done initializing Gimly");
         } catch (Exception e) {
             throw new ResourceInitializationException(e);
@@ -173,9 +194,11 @@ public class GimliAnnotator extends JCasAnnotator_ImplBase {
     private static class MySentence {
         int end;
         Sentence sentence;
+        int begin;
 
-        public MySentence(Sentence sentence, int end) {
+        public MySentence(Sentence sentence, int begin, int end) {
             this.sentence = sentence;
+            this.begin = begin;
             this.end = end;
         }
     }
@@ -195,7 +218,8 @@ public class GimliAnnotator extends JCasAnnotator_ImplBase {
             try {
                 sentence.parse(parser, sentenceText);
                 corpus.addSentence(sentence);
-                mySentences.add(new MySentence(sentence, jSentence.getEnd()));
+                mySentences.add(new MySentence(sentence, jSentence.getBegin(),
+                        jSentence.getEnd()));
             } catch (GimliException e) {
                 LOG.info("Error parsing sentence text '" + sentenceText + "'",
                         e);
@@ -211,48 +235,100 @@ public class GimliAnnotator extends JCasAnnotator_ImplBase {
         Abbreviation.process(corpus);
 
         // Access Gimly annotations and add to UIMA.
-        int lag = 0; // lag, for each sentence
         for (MySentence mySentence : mySentences) {
-            // LOG.debug(mySentence.sentence.toExportFormat());
+
+            // LOG.warn(mySentence.toString());
+            // LOG.warn(mySentence.sentence.toExportFormat());
 
             for (int ai = 0; ai < mySentence.sentence.getNumberAnnotations(); ai++) {
                 Annotation annotation = mySentence.sentence.getAnnotation(ai);
+                String annotationText = annotation.getText().trim();
 
-                // LOG.debug(annotation.toString());
-                // LOG.debug(annotation.getText());
+                // LOG.warn(ai
+                // + "::"
+                // + jCas.getDocumentText().substring(mySentence.begin,
+                // mySentence.end));
+                // LOG.warn(ai + ":" + annotation.toString());
+                // LOG.warn(ai + ":" + annotation.getText());
 
                 // indexes do not take into acct empty spaces
                 Token tokenStart = mySentence.sentence.getToken(annotation
                         .getStartIndex());
-                int start = tokenStart.getStart() + tokenStart.getIndex() + lag;
+                int start = tokenStart.getStart() + mySentence.begin;
                 Token tokenEnd = mySentence.sentence.getToken(annotation
                         .getEndIndex());
-                int end = tokenEnd.getEnd() + tokenEnd.getIndex() + lag + 1;
+                int end = tokenEnd.getEnd() + mySentence.begin + 1;
 
                 // sanity check
                 String uimaAnnotationText = jCas.getDocumentText().substring(
                         start, end);
-                if (!uimaAnnotationText.equals(annotation.getText().trim())) {
-                    LOG.warn("UIMA annotation not matching: '{}' vs '{}'",
-                            uimaAnnotationText, annotation.getText().trim());
+
+                // trying exact match
+                if (uimaAnnotationText.equals(annotationText)) {
+                    add(jCas, start, end);
 
                 } else {
-                    try {
-                        Constructor<? extends org.apache.uima.jcas.tcas.Annotation> constructor;
-                        constructor = neClass.getConstructor(JCas.class);
-                        org.apache.uima.jcas.tcas.Annotation uimaAnnotation = constructor
-                                .newInstance(jCas);
-                        uimaAnnotation.setBegin(start);
-                        uimaAnnotation.setEnd(end);
-                        uimaAnnotation.addToIndexes();
-                        LOG.debug("adding ne {}",
-                                uimaAnnotation.getCoveredText());
-                    } catch (Exception e) {
-                        throw new AnalysisEngineProcessException(e);
+
+                    String jSentenceText = jCas.getDocumentText().substring(
+                            mySentence.begin, mySentence.end);
+                    // occurence is always AFTER start, since normalization adds
+                    // space
+                    int indexOf = jSentenceText.indexOf(annotationText, start
+                            - mySentence.begin);
+                    List<Integer> starts = new ArrayList<Integer>();
+                    while (indexOf > -1) {
+                        starts.add(indexOf);
+                        indexOf = jSentenceText.indexOf(annotationText,
+                                indexOf + 1);
+                    }
+                    if (starts.size() == 1) {
+                        // one single match --> add it
+                        add(jCas, mySentence.begin + starts.get(0),
+                                mySentence.begin + starts.get(0)
+                                        + annotationText.length());
+
+                    } else if (starts.size() > 1) {
+                        // pick the one closer to start/end
+                        int smallestDelta = MAX_VALUE;
+                        int smallestDeltaIndex = -1;
+                        for (int i = 0; i < starts.size(); i++) {
+                            int delta = starts.get(i)
+                                    - (start - mySentence.begin);
+                            if (delta < smallestDelta) {
+                                smallestDelta = delta;
+                                smallestDeltaIndex = i;
+                            }
+                        }
+                        add(jCas,
+                                mySentence.begin
+                                        + starts.get(smallestDeltaIndex),
+                                mySentence.begin
+                                        + starts.get(smallestDeltaIndex)
+                                        + annotationText.length());
+
+                    } else if (starts.size() == 0) {
+                        LOG.warn("UIMA annotation not matching: '{}' vs '{}'",
+                                uimaAnnotationText, annotation.getText().trim());
                     }
                 }
             }
-            lag += mySentence.end;
+        }
+    }
+
+    private void add(JCas jCas, int start, int end)
+            throws AnalysisEngineProcessException {
+        try {
+            Constructor<? extends org.apache.uima.jcas.tcas.Annotation> constructor;
+            constructor = neClass.getConstructor(JCas.class);
+            org.apache.uima.jcas.tcas.Annotation uimaAnnotation = constructor
+                    .newInstance(jCas);
+            uimaAnnotation.setBegin(start);
+            uimaAnnotation.setEnd(end);
+            uimaAnnotation.addToIndexes();
+            // LOG.warn("adding ne {} [{}]", uimaAnnotation.getCoveredText(),
+            // uimaAnnotation.getBegin() + " " + uimaAnnotation.getEnd());
+        } catch (Exception e) {
+            throw new AnalysisEngineProcessException(e);
         }
     }
 
@@ -262,5 +338,14 @@ public class GimliAnnotator extends JCasAnnotator_ImplBase {
         super.collectionProcessComplete();
         // Terminate parser
         parser.terminate();
+    }
+
+    /** To overwrite the directory */
+    private static class MyGDepParser extends GDepParser {
+
+        public MyGDepParser(boolean doTokenisation, String dirPath) {
+            super(doTokenisation);
+            dir = new File(dirPath);
+        }
     }
 }
